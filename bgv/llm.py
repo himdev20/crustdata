@@ -20,7 +20,7 @@ from pydantic import BaseModel, ValidationError
 
 load_dotenv()
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.8-flash"
 MAX_RATE_LIMIT_RETRIES = 4
 BASE_BACKOFF_SECONDS = 2.0
 
