@@ -5,6 +5,8 @@ resume gets the same run_id and skips steps that already finished cleanly; steps
 an API error are saved as not-ok and are retried. Crustdata responses are also cached by
 the client, so a rerun does not spend credits twice.
 
+Checks: date_consistency (resume only), company checks per employer, then person checks.
+
 Decision: "auto_clear" only when every check is verified. Anything else (discrepancy,
 contradicted, or cannot_verify, which includes API failures) goes to "human_review".
 """
@@ -18,6 +20,7 @@ from typing import Callable
 
 from .company_checks import CompanyResult, check_company
 from .crustdata_client import CrustdataClient
+from .date_checks import check_dates
 from .models import CheckResult, ParsedResume, Referee, Verdict, VerificationReport
 from .person_checks import PersonResult, check_person
 from .referees import find_referees
@@ -26,6 +29,10 @@ from .store import Store
 
 log = logging.getLogger("bgv")
 Progress = Callable[[str], None]
+
+# Bump when parsing or check logic changes: checkpoints saved by older logic are then recomputed
+# instead of replaying stale verdicts (API responses stay cached, so no credits are spent twice).
+CHECKS_VERSION = 2
 
 
 def make_run_id(resume_text: str) -> str:
@@ -74,12 +81,12 @@ class Verifier:
 
     def _step(self, run_id: str, key: str, fn, load, dump, ok=lambda out: True):
         cached = self.store.load_step(run_id, key)
-        if cached is not None:
+        if isinstance(cached, dict) and cached.get("_v") == CHECKS_VERSION:
             self.progress(f"{key}: loaded from checkpoint")
-            return load(cached)
-        self.progress(f"{key}: running")
+            return load(cached["data"])
+        self.progress(f"{key}: running" + (" (checkpoint from older logic)" if cached is not None else ""))
         out = fn()
-        self.store.save_step(run_id, key, dump(out), ok=ok(out))
+        self.store.save_step(run_id, key, {"_v": CHECKS_VERSION, "data": dump(out)}, ok=ok(out))
         return out
 
     def run(self, source: str | Path | bytes, filename: str | None = None) -> VerificationReport:
@@ -136,7 +143,7 @@ class Verifier:
         elif client_error:
             notes = [f"Referee search skipped: {client_error}"]
 
-        checks = [c for i in sorted(companies) for c in companies[i].checks] + person.checks
+        checks = check_dates(resume) + [c for i in sorted(companies) for c in companies[i].checks] + person.checks
         if not resume.jobs:
             notes.append("The resume lists no jobs, so there was nothing to verify.")
         decision = decide(checks)

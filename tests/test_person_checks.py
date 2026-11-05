@@ -121,3 +121,13 @@ def test_year_only_claim():
     j = JobClaim(employer="Zoho", title="Software Engineer", start="2019", end="2021")
     res = check_person(FakeClient(people={URL: p}), resume(jobs=[j]), {0: COMPANIES[1]})
     assert checks(res, "Zoho", "tenure").verdict == Verdict.VERIFIED
+
+
+def test_blank_title_is_cannot_verify_not_discrepancy():
+    p = person(past=[emp("Zoho", "Member Technical Staff", "2019-07", "2021-12", cid=1032449)])
+    j = JobClaim(employer="Zoho Corporation Pvt Ltd", title="", start="2019-07", end="2021-12")
+    res = check_person(FakeClient(people={URL: p}), resume(jobs=[j]), {0: COMPANIES[1]})
+    t = checks(res, "Zoho", "title")
+    assert t.verdict == Verdict.CANNOT_VERIFY and "no title" in t.reasons[0]
+    assert t.claim == "Zoho Corporation Pvt Ltd, 2019-07 to 2021-12"
+    assert checks(res, "Zoho", "tenure").verdict == Verdict.VERIFIED  # dates are still checked

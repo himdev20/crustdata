@@ -54,3 +54,13 @@ def test_module_cannot_send_messages():
     src = inspect.getsource(referees_module)
     for word in ("smtplib", "requests.post", "send_message", "sendmail", "twilio"):
         assert word not in src
+
+
+def test_draft_with_blank_title_reads_naturally():
+    from bgv.referees import draft_message
+    j = JobClaim(employer="Tech Mahindra", title="", start="2017-08", end="2019-02")
+    msg = draft_message("Priya Iyer", "Sunil K", j, "Tech Mahindra", ((2017, 8), (2019, 2)))
+    assert "working at Tech Mahindra, and it looks like" in msg and " as ," not in msg
+    titled = draft_message("Priya Iyer", "Sunil K", j.model_copy(update={"title": "Support Engg"}),
+                           "Tech Mahindra", ((2017, 8), (2019, 2)))
+    assert "working at Tech Mahindra as Support Engg, and" in titled
