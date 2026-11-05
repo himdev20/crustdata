@@ -1,0 +1,22 @@
+ROHAN KULKARNI
+Pune, Maharashtra | rohan.kulkarni@example.com
+
+PROFESSIONAL SUMMARY
+Senior software engineer with experience building enterprise applications.
+
+WORK EXPERIENCE
+
+Senior Software Engineer
+Nexora Infotech Solutions Pvt Ltd, Pune
+April 2023 - January 2021
+Built payment integrations and mentored junior developers.
+
+Software Engineer
+Infosys, Pune
+July 2018 - March 2023
+Developed internal reporting tools for banking clients.
+
+EDUCATION
+
+B.E. Computer Engineering
+Savitribai Phule Pune University, 2014 - 2018
