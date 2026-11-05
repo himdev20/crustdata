@@ -1,19 +1,26 @@
-# Background Verification Agent
+# Submission drafts: background-verification agent
 
-An agent that checks the employment claims on a resume for hiring in India, shows the evidence for each result, and sends anything doubtful to a human reviewer.
+Anything in [square brackets] needs a real detail from Himanshu or from your test runs. Fill it in or delete it before submitting.
 
-> **Status:** the UI, parser and report are built, but the verification backend isn't connected yet. The app runs on a mock verifier by default, so **every verdict it shows is made up**. Live LLM calls haven't been run yet either.
+---
 
-## The service and who pays for it today
+## 1. README sections
 
-Employers in India check candidates' claims before making or confirming a hire, and they pay for it. They either run the checks in-house, with HR teams contacting past employers, or pay a background verification vendor per candidate. This agent automates the first pass on employment claims, so people spend their time on the cases that need judgment.
+### The service and who pays for it today
 
-## What it does now
+Before an Indian company makes an offer, it pays a background-verification firm to confirm the candidate's past employment. HR and talent-acquisition teams at IT services firms, startups and enterprises pay per candidate. The work is manual: verifiers phone HR departments, email former employers and wait days for replies.
 
-1. Takes a resume as an uploaded PDF or pasted text.
-2. Extracts the jobs, dates, titles, team-size claims, employer domains, LinkedIn URL and education. Anything the resume doesn't state stays empty.
-3. Lets a person correct those claims before verification.
-4. Runs a verifier and shows one row per check, with a verdict, reasons and clickable sources:
+It is also easy to fool. "Experience mills" sell experience letters from companies that exist on paper but have never really operated. When the verifier calls the number on the letter, someone at the mill confirms the job.
+
+### What it does now, and where it still needs a person
+
+You upload a resume as a PDF or paste the text. The agent:
+
+1. **Extracts every claim** with an LLM: employers, titles, start and end dates, team-size claims, employer websites, LinkedIn URL and education. A person can correct the extracted claims before verification starts.
+2. **Checks each employer** with Crustdata Company Identify, Company Enrich and Web Search: does it exist, when was it founded, how many people work there, and does it have a footprint beyond its own website?
+3. **Checks the person** with Crustdata Person Enrich or Person Search: do the claimed titles and dates match their real career history?
+4. **Finds possible referees**: people who worked at the same company over the same period. It drafts a reference-check message for each and never sends it.
+5. **Gives a verdict on every claim**, with reasons and a source:
 
    | Symbol | Verdict |
    | --- | --- |
@@ -22,122 +29,129 @@ Employers in India check candidates' claims before making or confirming a hire, 
    | ❌ | Contradicted |
    | ❓ | Cannot verify |
 
-5. Lists suggested referees with draft messages, labelled "Draft — not sent". The app never sends anything.
-6. Adds a 3–4 sentence summary and a decision: `auto_clear` or `human_review`.
-7. Puts `human_review` runs in a queue where a named reviewer approves or rejects them. Each decision is recorded once and can't be overwritten.
-8. Lets you download any report as Markdown or HTML.
+6. **Acts or hands over.** A resume with no ⚠️ or ❌ is cleared automatically. Anything flagged goes to a human review queue, where a named reviewer approves or rejects it.
 
-The LLM is used only to parse resumes and write the summary. It never decides a verdict.
+**Where it still needs a person:**
 
-## How to run it
+- every ⚠️ and ❌ goes to a reviewer, and the agent never rejects a candidate on its own;
+- a ❓ means the data wasn't there, not that the claim is false, so a reviewer decides whether to chase it;
+- referee messages are drafts only, so a person decides whether to send them;
+- scanned PDFs with no text layer need the text pasted in.
 
-Requires Python 3.14, the only version this has been tested on.
+### Approaches we weighed
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install google-genai pydantic python-dotenv pypdf streamlit pytest pandas requests
-```
+**AI verdicts vs fixed rules.** We could have handed the resume and the Crustdata evidence to an LLM and asked it to judge. We chose fixed Python rules for every verdict instead, because:
 
-Create a `.env` file in the repo root. It's gitignored, so never commit it.
+- the same evidence always gives the same verdict, however the resume is worded;
+- every verdict can state its exact reason, such as "company founded 2023, claimed start 2019";
+- an LLM can be talked into things by text inside the resume.
 
-```bash
-GEMINI_API_KEY=your-key-here
-```
+The LLM does only two jobs: turning a messy resume into structured claims, and writing a 3–4 sentence summary of verdicts that are already decided. Its output is checked against the resume text, and any value it can't find there is removed.
 
-Then start the app:
+**Training a model vs live lookups.** We didn't train anything. Employment facts change constantly, and the job needs fresh lookups with citable sources, not knowledge stored in a model.
 
-```bash
-streamlit run app.py
-```
+**Accuse vs "cannot verify".** A job missing from a public profile proves nothing; profiles are often incomplete. So a missing record gives ❓, never ❌. A ❌ needs positive evidence, such as a founding date after the claimed start.
 
-Run the tests from the repo root:
+### What worked and what didn't
 
-```bash
-python -m pytest tests
-```
-
-Tests in `tests/test_parser_live.py` call Gemini, so they skip until `GEMINI_API_KEY` is set. All the others run offline.
-
-### Settings
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `GEMINI_API_KEY` | None | Required for parsing. Without it, summaries fall back to a plain count of the verdicts. |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | The Gemini model to use. |
-| `BGV_VERIFIER` | `mock` | `mock` uses `bgv/mock_verifier.py`. `real` uses `bgv/verifier.py`. |
-| `BGV_REVIEW_FILE` | `~/.bgv/review_queue.json` | Where review runs and decisions are stored. The default is outside the repo because the file holds candidate data. |
-
-### Sample resumes
-
-| File | What it tests |
+| What we tried | Result |
 | --- | --- |
-| `samples/fake_employer.txt` | An employer that doesn't exist, and an end date before the start date |
-| `samples/team_size_tiny_company.txt` | A team of 15 claimed at a real company listed with 2–10 staff |
-| `samples/messy_missing_fields.txt` | Pasted tables, mixed date formats and missing fields |
+| Checking that each extracted value appears in the resume by stripping punctuation and looking for a substring | **Failed.** "MBA" matched inside "IIT Bombay", so an invented degree passed. A test caught it. |
+| Matching whole words instead | **Worked.** "B.Tech" still matches "BTech", and "MBA" no longer matches "Bombay". |
+| Gemini models | **Mixed.** [Describe the timeouts: which model, how often.] The model we started with, `gemini-2.5-flash`, is no longer available to new API keys, so we moved to `gemini-3.8-flash`. The model name is a setting, so switching took one line. |
+| Falling back to a plain summary when the LLM fails | **Worked.** A Gemini failure can't block a report. |
+| Finding referees with Person Search | **Rarely useful.** Searching past employees of a company works, but few results overlapped the candidate's dates by 6 months or more. [Add numbers, e.g. "1 overlapping colleague across 4 test resumes".] |
+| Looking up a made-up employer in Company Identify by name | **Needed care.** Fuzzy matching returns lookalike companies at 0.6 confidence for any name, including real tiny firms with similar names. We match exactly first and accept a fuzzy match only if the names are very close. |
 
-The candidates are fictional. The samples leave out LinkedIn URLs because a made-up one could resolve to a real person. A clean sample based on a real public profile is still to come.
+### The hardest case: the wrong "Zoho Belgium" match
 
-## How it's built
+[Confirm the details with Himanshu.] A candidate's "Zoho" job was matched by Crustdata to a small Zoho entity in Belgium instead of Zoho Corporation in India. The Belgian entity had a different founding year and a tiny headcount, so a genuine job at a large company came out as a discrepancy. That is the worst kind of error for this product: an honest candidate flagged.
+
+[Describe the fix, for example:] We now prefer the company ID on the candidate's own profile when one exists, then the company's domain, and only then a name lookup. When several companies share a name, we pick the one in India or with the larger headcount, and say in the reasons which one we chose.
+
+### What we left out, and what's next
+
+Left out on purpose:
+
+- **Sending anything.** The agent never contacts candidates, employers or referees.
+- **Education verification** beyond comparing against the profile; there is no university-registry check.
+- **Scanned PDFs.** There's no OCR yet.
+
+Next:
+
+1. More test resumes with known answers, to measure how many fakes we catch and how many honest candidates we wrongly flag.
+2. OCR for scanned PDFs.
+3. Better referee search, for example by team or location as well as company and dates.
+4. Moving the review queue from a JSON file into the same SQLite store as the checks.
+5. Checking company registration data, so a company that exists only on paper is easier to spot.
+
+---
+
+## 2. Mermaid diagram
+
+Paste this into mermaid.live, then use **Share** (or **Actions → Copy link**) to get a link anyone can open.
 
 ```mermaid
 flowchart TD
-    A["Resume: PDF or pasted text"] --> B["bgv/resume_parser.py"]
-    B <--> C["bgv/llm.py (Gemini)"]
-    B --> D["Editable claims in app.py"]
-    D --> E{"BGV_VERIFIER"}
-    E -->|mock| F["bgv/mock_verifier.py"]
-    E -->|real| G["bgv/verifier.py"]
-    G --> H["Crustdata API"]
-    F --> I["VerificationReport"]
-    G --> I
-    I --> J["bgv/report.py"]
-    J <--> C
-    J --> K["Report page and downloads"]
-    I -->|human_review| L["Review queue (JSON file)"]
-    L --> M["Approve or reject"]
+    A["Resume<br/>PDF or pasted text"] --> B["resume_parser.py"]
+    B <--> L["llm.py<br/>Gemini: parsing only"]
+    B --> P["ParsedResume<br/>editable in the app"]
+    P --> V["verifier.py<br/>verify()"]
+
+    V --> C1["company_checks.py<br/>exists? founded when?<br/>headcount? web footprint?"]
+    V --> C2["person_checks.py<br/>real titles and dates"]
+    V --> C3["referees.py<br/>overlapping colleagues<br/>drafts only, never sent"]
+
+    C1 --> CC["crustdata_client.py<br/>retries on rate limits"]
+    C2 --> CC
+    C3 --> CC
+    CC <--> API["Crustdata API<br/>Company Identify / Enrich<br/>Person Enrich / Search<br/>Web Search"]
+    CC <--> DB[("SQLite<br/>cached responses,<br/>run progress,<br/>employers seen before")]
+
+    V --> R["VerificationReport<br/>verdict + reasons + source<br/>for every claim"]
+    R --> RP["report.py<br/>table + summary"]
+    RP <--> L
+    RP --> D{"Any ⚠️ or ❌?"}
+    D -->|no| AC["Auto-clear"]
+    D -->|yes| Q["Human review queue<br/>approve or reject"]
 ```
 
-| File | Role |
-| --- | --- |
-| `bgv/models.py` | The shared data contract between the parser and the verifier |
-| `bgv/llm.py` | `complete_json()`, the only code that knows about Gemini |
-| `bgv/resume_parser.py` | `parse_resume()`: extracts PDF text, calls the LLM, and checks the answer against the resume |
-| `bgv/verifier.py` | `verify()`: the real backend (in progress) |
-| `bgv/mock_verifier.py` | A stand-in for `verify()` with the same signature |
-| `bgv/report.py` | Renders Markdown and HTML, and writes the summary |
-| `app.py` | The Streamlit UI and the review queue storage |
+---
 
-Three decisions shape the design:
+## 3. Two-minute demo script
 
-- **Code decides, not the LLM.** Verdicts come from the verifier. The summary prompt only gets the existing verdicts, and the report keeps the original checks and decision whatever the LLM returns.
-- **LLM output is checked, not trusted.** A false value in a claim would be checked as if the candidate had said it, so the parser removes any value it can't find in the resume text.
-- **Resume text is treated as untrusted.** The prompts mark it as data, and the report escapes it. Only `http(s)` sources become links.
+**0:00–0:15. The problem.**
+"Before an Indian company makes an offer, it pays a verification firm that takes days and still gets fooled by experience mills selling letters from shell companies. Our agent does it in minutes, with a source for every verdict."
 
-### Known limits
+**0:15–0:50. The fake employer.**
+Paste `samples/fake_employer.txt`. Show the extracted claims for a second, then click Verify.
+"The resume claims a job at Nexora Infotech Solutions from [year]." Point at the ❌.
+"Contradicted: [read the reason, e.g. no matching company and no web presence]. And here's the source." Click the source link.
 
-- A year with no month, such as "2016", is stored as `None`, because `YYYY-MM` can't hold it and guessing a month would invent data. The original line stays in `raw_text`.
-- `bgv/models.py` requires `full_name`, `employer` and `title` as strings, so a missing one is `""`, not `None`.
-- The team-size check accepts any positive number, so that "a dozen" can still count. It doesn't confirm the number is in the resume.
-- The summary check catches invented numbers but not invented words. The prompt is the only defence against those.
-- Scanned PDFs have no text layer and aren't supported, so the app asks for pasted text instead.
+**0:50–1:20. The team size.**
+Paste `samples/team_size_tiny_company.txt` and click Verify.
+"This candidate says they led a team of 15." Point at the ⚠️.
+"Crustdata lists the company at [2–10] people. That's a discrepancy, not a rejection, so it goes to a human."
 
-## Approaches we tried and what worked
+**1:20–1:45. The review queue.**
+Open the Human review queue page.
+"Only flagged cases land here. A reviewer sees the evidence, approves or rejects, and their decision is recorded. Clean resumes never reach this page."
 
-| Approach | Result |
-| --- | --- |
-| Checking values against the resume by removing punctuation and looking for a substring | **Failed.** "MBA" matched inside "IIT Bombay", so an invented degree passed. A test caught it. |
-| Matching whole words, ignoring punctuation | **Worked in offline tests.** "B.Tech" matches "BTech", and "MBA" no longer matches "Bombay". |
-| Falling back to a plain summary when the LLM fails | **Worked in offline tests.** A Gemini failure can't block a report. |
-| Looking up the fake employer in Crustdata by name | **Mixed.** An exact match correctly finds nothing, but fuzzy matching returns lookalike companies at 0.6 confidence. |
+**1:45–2:00. What's next.**
+"Verdicts come from fixed rules, so the same evidence always gets the same answer. Next, we're measuring catch rate on a larger set of known-fake resumes."
 
-Parsing quality against real Gemini responses is still untested.
+---
 
-## What we'd do next
+## 4. Submission form text
 
-1. Run the live parser tests with a Gemini key, and fix what they find.
-2. Connect `bgv/verifier.py` and test all the samples end to end with `BGV_VERIFIER=real`.
-3. Add the clean sample based on a real public profile.
-4. Decide with the backend owner whether review runs should move from the JSON file to `store.py`.
-5. Decide whether `full_name`, `employer` and `title` should become optional in `bgv/models.py`.
-6. Add OCR for scanned PDFs.
+**One-line description**
+
+An agent that reads a candidate's resume and returns a source-cited background-verification report in minutes, catching fake employers and inflated claims, and sending only flagged cases to a human.
+
+**How your product works**
+
+You upload a resume or paste its text. An LLM extracts each claim (employer, title, dates, team size, education), and the app checks every extracted value against the original text so nothing is invented.
+
+For each employer, the agent uses Crustdata Company Identify, Company Enrich and Web Search to check that the company exists, when it was founded, its headcount and its footprint on the web. For the candidate, it uses Person Enrich or Person Search to compare claimed titles and dates with their real career history, matching on Crustdata's company ID so renamed and acquired companies still match. It also finds former colleagues whose dates overlapped and drafts reference-check messages, which it never sends.
+
+Every verdict (verified, discrepancy, contradicted or cannot verify) comes from fixed Python rules, not the LLM, so the same evidence always gives the same answer, and each one comes with its reason and source. Missing data gives "cannot verify", never an accusation. Crustdata responses are cached in SQLite, so a rerun costs nothing and a crashed run resumes where it stopped. Clean resumes are cleared automatically; anything flagged goes to a review queue where a person approves or rejects it.
