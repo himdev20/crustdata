@@ -1,0 +1,11 @@
+Aarav Sharma
+Bengaluru, India | aarav.sharma@example.com | +91 98450 00000
+
+EXPERIENCE
+Senior Software Engineer, Freshworks - Chennai            Jan 2022 - Present
+  - Led a team of 6 engineers building the billing service.
+Software Engineer, Zoho Corporation Pvt Ltd - Chennai      Jul 2019 - Dec 2021
+  - Built reporting APIs used by 2,000 customers.
+
+EDUCATION
+B.Tech, Computer Science, Vellore Institute of Technology   2015 - 2019

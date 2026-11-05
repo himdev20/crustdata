@@ -17,3 +17,7 @@ build/
 .vscode/
 *.pdf
 
+
+# verification data (contains candidate PII)
+*.sqlite
+.pytest_cache/
