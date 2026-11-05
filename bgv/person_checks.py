@@ -262,7 +262,13 @@ def check_person(client: CrustdataClient, resume: ParsedResume,
         # Title: any role held at this employer counts.
         t_best = max(entries, key=lambda e: title_similarity(job.title, e.title))
         t_score = title_similarity(job.title, t_best.title)
-        if not t_best.title:
+        if not job.title.strip():
+            res.checks.append(CheckResult(
+                claim=claim, check="title", verdict=Verdict.CANNOT_VERIFY,
+                reasons=["The resume gives no title for this role, so there is nothing to compare"
+                         + (f" (the profile says '{t_best.title}')." if t_best.title else ".")],
+                sources=sources))
+        elif not t_best.title:
             res.checks.append(CheckResult(claim=claim, check="title", verdict=Verdict.CANNOT_VERIFY,
                                           reasons=["The profile has no title for this role."], sources=sources))
         elif t_score >= TITLE_MIN:

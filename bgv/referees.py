@@ -49,10 +49,11 @@ def overlap(a: Window, b: Window) -> tuple[Window | None, int]:
 def draft_message(referee_name: str, candidate: str, job: JobClaim, employer: str, ov: Window) -> str:
     first = referee_name.split()[0] if referee_name else "there"
     period = f"{fmt_month(ov[0])} to {'present' if ov[1] == current_month() else fmt_month(ov[1])}"
+    role = f" as {job.title.strip()}" if job.title.strip() else ""  # resume may give no title
     return (
         f"Hi {first},\n\n"
         f"I'm part of the hiring team at [Your Company]. {candidate} has applied for a role with us, and with their "
-        f"consent we are doing a short reference check. They mention working at {employer} as {job.title}, and it "
+        f"consent we are doing a short reference check. They mention working at {employer}{role}, and it "
         f"looks like your time there overlapped ({period}).\n\n"
         f"Would you be open to a 10-minute call, or a quick reply, to confirm their role and approximate dates? "
         f"Please share only what you are comfortable with; anything you say will be kept confidential.\n\n"

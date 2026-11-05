@@ -2,12 +2,13 @@
 from bgv.crustdata_client import CrustdataError
 
 
-def company(cid, name, domain=None, year=None, total=None, timeseries=None):
+def company(cid, name, domain=None, year=None, total=None, timeseries=None, country=None):
     return {
         "crustdata_company_id": cid,
         "basic_info": {"name": name, "crustdata_company_id": cid, "primary_domain": domain,
                        "all_domains": [domain] if domain else [], "profile_name": name, "year_founded": year},
         "headcount": {"total": total, "timeseries": timeseries or []},
+        "locations": {"country": country},
     }
 
 
@@ -42,6 +43,7 @@ class FakeClient:
 
     def enrich_company(self, crustdata_company_id, fields=None):
         self._maybe_fail("enrich_company")
+        self.enriched = getattr(self, "enriched", []) + [crustdata_company_id]
         return next((c for c in self.companies if c["crustdata_company_id"] == crustdata_company_id), None)
 
     def web_search(self, query):

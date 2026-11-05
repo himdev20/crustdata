@@ -186,10 +186,11 @@ def verdict_tiles(report: VerificationReport) -> None:
 def employers_by_claim(run_id: str) -> dict[str, str]:
     """Map each check's claim to its employer, using the jobs saved when the resume was parsed."""
     saved = get_store().load_step(run_id, "parse")
+    if isinstance(saved, dict) and "_v" in saved:  # verifier wraps checkpoints as {"_v", "data"}
+        saved = saved.get("data")
     if saved is None:
         return {}
     return {job_label(job): job.employer for job in ParsedResume.model_validate(saved).jobs}
-
 
 def group_by_employer(report: VerificationReport) -> dict[str, dict[str, list[CheckResult]]]:
     """Return {employer: {claim: checks}} in resume order, with unmatched checks last."""

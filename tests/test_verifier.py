@@ -59,7 +59,8 @@ def test_decide():
 def test_clean_run_auto_clears(fake_llm, store):
     rep = Verifier(good_client(), store).run(RESUME_TEXT)
     assert rep.decision == "auto_clear", [(c.check, c.verdict, c.reasons) for c in rep.checks]
-    assert {c.check for c in rep.checks} == {"employer_exists", "founded_before_start", "tenure", "title"}
+    assert {c.check for c in rep.checks} == {"date_consistency", "employer_exists", "founded_before_start",
+                                             "tenure", "title"}
     assert rep.referees[0].name == "Priya Iyer"
     run = store.get_run(rep.run_id)
     assert (run["status"], run["decision"], run["review_status"]) == ("done", "auto_clear", "not_needed")
@@ -111,8 +112,9 @@ def test_missing_api_key_becomes_cannot_verify(fake_llm, store, monkeypatch):
     monkeypatch.setattr("bgv.crustdata_client.load_dotenv", lambda: None)
     rep = Verifier(None, store).run(RESUME_TEXT)
     assert rep.decision == "human_review"
-    assert all(c.verdict == Verdict.CANNOT_VERIFY for c in rep.checks)
-    assert "CRUSTDATA_API_KEY" in rep.checks[0].reasons[0]
+    api_checks = [c for c in rep.checks if c.check != "date_consistency"]  # date checks need no API
+    assert api_checks and all(c.verdict == Verdict.CANNOT_VERIFY for c in api_checks)
+    assert "CRUSTDATA_API_KEY" in api_checks[0].reasons[0]
 
 
 def test_review_decision_survives_rerun(fake_llm, store):
@@ -122,3 +124,27 @@ def test_review_decision_survives_rerun(fake_llm, store):
     Verifier(FakeClient(fail={"identify_company", "web_search", "enrich_person", "search_people"}),
              store).run(RESUME_TEXT)
     assert store.get_run(rep.run_id)["review_status"] == "approved"
+
+
+def test_impossible_dates_send_run_to_review(store):
+    bad = dict(PARSED, jobs=[dict(PARSED["jobs"][0], start="2021-12", end="2019-07")])
+    llm.set_provider(CountingLLM(bad))
+    try:
+        rep = Verifier(good_client(), store).run(RESUME_TEXT)
+    finally:
+        llm.set_provider(None)
+    c = next(c for c in rep.checks if c.check == "date_consistency")
+    assert c.verdict == Verdict.CONTRADICTED and rep.decision == "human_review"
+
+
+def test_checkpoint_from_older_logic_is_recomputed(fake_llm, store):
+    rep = Verifier(good_client(), store).run(RESUME_TEXT)
+    # Simulate a checkpoint written by an older version (no version stamp) with a stale verdict.
+    stale = {"job_index": 0, "employer": "Zoho Corporation Pvt Ltd", "checks": [
+        {"claim": "x", "check": "employer_exists", "verdict": "contradicted", "reasons": ["old logic"]}]}
+    store.save_step(rep.run_id, "company:0", stale)
+    c2 = good_client()
+    rep2 = Verifier(c2, store).run(RESUME_TEXT)
+    assert "identify_company" in c2.calls              # recomputed, not replayed
+    assert not any("old logic" in r for c in rep2.checks for r in c.reasons)
+    assert fake_llm.calls == 1                          # current-version parse checkpoint still reused
