@@ -2,11 +2,14 @@
 
 The LLM does the reading; everything it returns is validated by pydantic and then
 normalised by plain code (dates, LinkedIn URL, current-job flags), so the checks
-downstream never depend on the model's formatting habits.
+downstream never depend on the model's formatting habits. Finally every employer, school,
+title, domain, LinkedIn URL and date year is checked against the resume text, and values
+the resume does not contain are dropped.
 """
 from __future__ import annotations
 
 import io
+import logging
 import re
 from pathlib import Path
 
@@ -14,6 +17,8 @@ from pypdf import PdfReader
 
 from .llm import complete_json
 from .models import ParsedResume
+
+log = logging.getLogger(__name__)
 
 MAX_CHARS = 30_000  # resumes are short; this guards against pasting a whole book
 
@@ -148,6 +153,77 @@ def _clean(resume: ParsedResume, text: str) -> ParsedResume:
     return resume
 
 
+# ---------- grounding (idea ported from the srishti branch) ----------
+# A value the resume text does not contain was invented by the LLM, and every later
+# check would be verifying something the candidate never claimed, so it is removed.
+
+def _appears(value: str, source: str) -> bool:
+    """Whether value is in the casefolded source as whole words.
+
+    Spacing and punctuation may differ ("B.Tech" matches "B Tech" and "BTech"),
+    but a match must not start or end inside a word ("MBA" does not match "Bombay").
+    """
+    characters = re.sub(r"[\W_]+", "", value.casefold())
+    if not characters:
+        return False
+    pattern = r"[\W_]*".join(re.escape(c) for c in characters)
+    return re.search(rf"(?<![^\W_]){pattern}(?![^\W_])", source) is not None
+
+
+def _year_appears(year: int, source: str) -> bool:
+    """Whether the year is in the source in full ("2019") or as a standalone "19" ("03/19", "Feb '19")."""
+    return re.search(rf"(?<!\d)({year}|{year % 100:02d})(?!\d)", source) is not None
+
+
+def _grounded_month(value: str | None, source: str) -> str | None:
+    """value is already normalised to 'YYYY' or 'YYYY-MM'; keep it only if its year is in the resume."""
+    if not value:
+        return None
+    return value if _year_appears(int(value[:4]), source) else None
+
+
+def _grounded_linkedin(url: str | None, source: str) -> str | None:
+    if not url:
+        return None
+    slug = url.rstrip("/").split("/in/")[-1]
+    return url if _appears(f"linkedin.com/in/{slug}", source) else None
+
+
+def _ground_in_source(resume: ParsedResume, text: str) -> ParsedResume:
+    source = text.casefold()
+    jobs = []
+    for job in resume.jobs:
+        if not _appears(job.employer, source):
+            log.warning("Dropped job: employer %r is not in the resume", job.employer)
+            continue
+        if job.title and not _appears(job.title, source):
+            log.warning("Dropped title %r: not in the resume", job.title)
+            job.title = ""
+        if job.employer_domain and not _appears(job.employer_domain, source):
+            log.warning("Dropped domain %r: not in the resume", job.employer_domain)
+            job.employer_domain = None
+        job.start = _grounded_month(job.start, source)
+        job.end = _grounded_month(job.end, source)
+        jobs.append(job)
+    resume.jobs = jobs
+
+    education = []
+    for item in resume.education:
+        if not _appears(item.school, source):
+            log.warning("Dropped education: school %r is not in the resume", item.school)
+            continue
+        if item.start_year is not None and not _year_appears(item.start_year, source):
+            item.start_year = None
+        if item.end_year is not None and not _year_appears(item.end_year, source):
+            item.end_year = None
+        education.append(item)
+    resume.education = education
+
+    # If the LLM's URL is invented, keep the one actually written in the resume (if any).
+    resume.linkedin_url = _grounded_linkedin(resume.linkedin_url, source) or normalize_linkedin(text)
+    return resume
+
+
 # ---------- public API ----------
 
 def parse_resume(source: str | Path | bytes, filename: str | None = None) -> ParsedResume:
@@ -157,7 +233,7 @@ def parse_resume(source: str | Path | bytes, filename: str | None = None) -> Par
     resume = complete_json(PROMPT.format(text=text[:MAX_CHARS]), ParsedResume)
     if not resume.full_name.strip():
         raise ResumeParseError("Could not find the candidate's name in the resume.")
-    return _clean(resume, text)
+    return _ground_in_source(_clean(resume, text), text)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from bgv import report as report_fmt
 from bgv.models import VerificationReport
 from bgv.store import Store
 from bgv.verifier import Verifier
@@ -27,7 +28,25 @@ def _link(ref: str) -> str:
     return f"[{ref}]({url})" if url.startswith("http") else f"`{ref}`"
 
 
+def summarized(report: VerificationReport) -> VerificationReport:
+    """report.with_summary() makes an LLM call, so do it once per run, not on every Streamlit rerun."""
+    cache = st.session_state.setdefault("summaries", {})
+    if report.run_id not in cache:
+        cache[report.run_id] = report_fmt.with_summary(report).summary
+    return report.model_copy(update={"summary": cache[report.run_id]})
+
+
+def download_buttons(report: VerificationReport, key: str) -> None:
+    name = f"bgv_{report.run_id}"
+    c1, c2, _ = st.columns([1, 1, 4])
+    c1.download_button("Download Markdown", report_fmt.to_markdown(report), file_name=f"{name}.md",
+                       mime="text/markdown", key=f"{key}-md")
+    c2.download_button("Download HTML", report_fmt.to_html(report), file_name=f"{name}.html",
+                       mime="text/html", key=f"{key}-html")
+
+
 def render_report(report: VerificationReport, key: str) -> None:
+    report = summarized(report)
     counts = {v: sum(c.verdict.value == v for c in report.checks) for v in ICON}
     if report.decision == "auto_clear":
         st.success(f"**Auto-clear**: every claim for {report.candidate} was verified.")
@@ -36,7 +55,8 @@ def render_report(report: VerificationReport, key: str) -> None:
     cols = st.columns(4)
     for col, v in zip(cols, ICON):
         col.metric(ICON[v], counts[v])
-    st.caption(report.summary)
+    st.text(report.summary)  # plain text: the summary can quote resume content
+    download_buttons(report, key)
 
     checks = sorted(report.checks, key=lambda c: ORDER[c.verdict.value])
     st.dataframe(

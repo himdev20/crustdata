@@ -10,7 +10,8 @@ from bgv.verifier import Verifier, decide
 from tests.fakes import FakeClient, company, web
 from tests.test_person_checks import URL, emp, person
 
-RESUME_TEXT = "Aarav Sharma\nlinkedin.com/in/aarav-sharma\nSoftware Engineer, Zoho, Jul 2019 - Dec 2021\n"
+RESUME_TEXT = ("Aarav Sharma\nlinkedin.com/in/aarav-sharma\n"
+               "Software Engineer, Zoho Corporation Pvt Ltd, Jul 2019 - Dec 2021\n")
 PARSED = {"full_name": "Aarav Sharma", "linkedin_url": URL, "jobs": [
     {"employer": "Zoho Corporation Pvt Ltd", "title": "Software Engineer", "start": "2019-07", "end": "2021-12"}]}
 ZOHO = company(1032449, "Zoho", "zoho.com", 1996, 30919)
