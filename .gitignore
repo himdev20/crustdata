@@ -21,3 +21,5 @@ build/
 # verification data (contains candidate PII)
 *.sqlite
 .pytest_cache/
+
+private/
